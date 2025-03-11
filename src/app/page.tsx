@@ -10,7 +10,6 @@ import {
   useTransform,
   AnimatePresence,
 } from "framer-motion";
-import { ethers } from "ethers";
 
 import { styles } from "./components/styles";
 // Add this interface near the top of your file, after your imports
@@ -37,19 +36,9 @@ interface FormattedMarket {
 }
 export default function Main() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const scrollRef = useRef(null);
+
   const { scrollYProgress } = useScroll();
-  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.8]);
-  const rotation = useTransform(scrollYProgress, [0, 1], [0, 20]);
-  const blur = useTransform(scrollYProgress, [0, 0.5], [0, 5]);
-
-  // Light theme colors
-  const colorScheme = { primary: "#000000", secondary: "#555555" };
   const [isHovering, setIsHovering] = useState(false);
-
-  // Contract address and ABI
-  const contractAddress = "0x8D92868b31d319A474c5227c39bd4CF9e46f7890";
 
   // Prediction markets state
   const [predictionMarkets, setPredictionMarkets] = useState<FormattedMarket[]>(
