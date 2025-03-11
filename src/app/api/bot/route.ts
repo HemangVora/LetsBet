@@ -79,7 +79,7 @@ async function getOrCreateUserWallet(userId: string) {
   return { AptosAccount, inProgress: false };
 }
 
-export class AptosPrivateKeyTool extends Tool {
+class AptosPrivateKeyTool extends Tool {
   name = "aptos_get_private_key";
   description = "Get the wallet private key of the agent";
 
