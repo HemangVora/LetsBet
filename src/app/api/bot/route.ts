@@ -8,14 +8,7 @@ import { Tool } from "langchain/tools";
 import { MemorySaver } from "@langchain/langgraph";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { HumanMessage } from "@langchain/core/messages";
-import { getApps, initializeApp, getApp } from "firebase/app";
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { MongoClient, ObjectId } from "mongodb";
 import {
   Account,
   Aptos,
@@ -30,9 +23,7 @@ import {
 import { AgentRuntime, LocalSigner, createAptosTools } from "move-agent-kit";
 import { ChatAnthropic } from "@langchain/anthropic";
 
-const token =
-  process.env.TELEGRAM_BOT_TOKEN ||
-  "7804252941:AAGOkHdAQIyZTX58CP8KDRlqbaKdKJ_QjjY";
+const token = process.env.TELEGRAM_BOT_TOKEN;
 console.log(token);
 if (!token) {
   throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
@@ -41,45 +32,50 @@ const bot = new Bot(token);
 const memorySaver = new MemorySaver();
 const userImportState = new Map<string, boolean>();
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-};
+// MongoDB setup
+const mongoUrl = process.env.NEXT_PUBLIC_MONGO_URL || "";
+if (!mongoUrl) {
+  throw new Error("NEXT_PUBLIC_MONGO_URL environment variable not found.");
+}
 
-const app = !getApps.length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+let mongoClient: MongoClient | null = null;
+
+async function connectToMongo() {
+  if (!mongoClient) {
+    mongoClient = new MongoClient(mongoUrl);
+    await mongoClient.connect();
+  }
+  return mongoClient.db("predikto");
+}
 
 async function getOrCreateUserWallet(userId: string) {
-  const userDocRef = doc(db, "users", userId);
-  const userDocSnap = await getDoc(userDocRef);
-  if (userDocSnap.exists()) {
-    const AccountData = userDocSnap.data();
+  const db = await connectToMongo();
+  const usersCollection = db.collection("users");
+
+  const user = await usersCollection.findOne({ userId: userId });
+
+  if (user) {
     const privateKey = new Ed25519PrivateKey(
-      PrivateKey.formatPrivateKey(
-        AccountData.privateKey,
-        PrivateKeyVariants.Ed25519
-      )
+      PrivateKey.formatPrivateKey(user.privateKey, PrivateKeyVariants.Ed25519)
     );
     const AptosAccount = Account.fromPrivateKey({
       privateKey: privateKey,
     });
-    return { AptosAccount, inProgress: AccountData.inProgress };
+    return { AptosAccount, inProgress: user.inProgress };
   }
+
   const AptosAccount = Account.generate();
 
   // you should encrypt the private key before storing it in the database
   const AccountData = {
+    userId: userId,
     publicKey: AptosAccount.publicKey.toString(),
     privateKey: AptosAccount.privateKey.toString(),
     inProgress: false,
     inGame: false,
   };
-  await setDoc(userDocRef, AccountData);
+
+  await usersCollection.insertOne(AccountData);
   return { AptosAccount, inProgress: false };
 }
 
@@ -156,9 +152,12 @@ bot.command("start", async (ctx) => {
   if (!userId) {
     return;
   }
-  const userDocRef = doc(db, "users", userId);
-  const userDocSnap = await getDoc(userDocRef);
-  if (!userDocSnap.exists()) {
+
+  const db = await connectToMongo();
+  const usersCollection = db.collection("users");
+  const user = await usersCollection.findOne({ userId: userId });
+
+  if (!user) {
     const keyboard = new InlineKeyboard()
       .text("Create New Account", "create_account")
       .text("Import Existing Account", "import_account");
@@ -205,7 +204,9 @@ bot.on("message:text", async (ctx: Context) => {
   if (!userId) {
     return;
   }
-  const userDocRef = doc(db, "users", userId);
+
+  const db = await connectToMongo();
+  const usersCollection = db.collection("users");
 
   const privateKeyInput = ctx.message?.text || "";
 
@@ -229,12 +230,19 @@ bot.on("message:text", async (ctx: Context) => {
         privateKey: privateKey,
       });
       const AccountData = {
+        userId: userId,
         publicKey: AptosAccount.publicKey.toString(),
         privateKey: AptosAccount.privateKey.toString(),
         inProgress: false,
         inGame: false,
       };
-      await setDoc(userDocRef, AccountData);
+
+      await usersCollection.updateOne(
+        { userId: userId },
+        { $set: AccountData },
+        { upsert: true }
+      );
+
       await ctx.reply("Account successfully imported! Your wallet address is:");
       await ctx.reply(`${AptosAccount.publicKey.toString()}`);
 
@@ -253,10 +261,17 @@ bot.on("message:text", async (ctx: Context) => {
   }
 
   const { AptosAccount, inProgress } = await getOrCreateUserWallet(userId);
+
   if (inProgress) {
     await ctx.reply(`Hold on! I'm still processing...`);
     return;
   }
+
+  // Update user status to in progress
+  await usersCollection.updateOne(
+    { userId: userId },
+    { $set: { inProgress: true } }
+  );
 
   const { agent, config } = await initializeAgent(userId, AptosAccount);
 
@@ -304,6 +319,12 @@ bot.on("message:text", async (ctx: Context) => {
         "I'm sorry, an error occurred while processing your request."
       );
     }
+  } finally {
+    // Reset inProgress status
+    await usersCollection.updateOne(
+      { userId: userId },
+      { $set: { inProgress: false } }
+    );
   }
 });
 

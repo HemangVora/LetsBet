@@ -168,7 +168,7 @@ export default function Main() {
               style={styles.boxShadowForButton}
               className={`w-[160px] h-[40px] ${styles.primaryButton} rounded-[32px] flex justify-center items-center`}
             >
-              <p className="flex text-[16px] font-[600]">Login / Signup</p>
+              <p className="flex text-[16px] font-[600]">Get started</p>
             </button>
           </div>
         </div>
