@@ -4,12 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
-import {
-  motion,
-  useScroll,
-  useTransform,
-  AnimatePresence,
-} from "framer-motion";
+import { motion, useScroll, AnimatePresence } from "framer-motion";
 
 import { styles } from "./components/styles";
 // Add this interface near the top of your file, after your imports
