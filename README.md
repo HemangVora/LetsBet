@@ -1,24 +1,76 @@
-# Telegram Bot Starter with Aptos Agent Kit
+# Predikto - Telegram Prediction Market Bot
 
-This example showcases how we can make a telegram bot with the Aptos Agent Kit.
+Predikto is a Telegram bot that allows users to create and participate in prediction markets on the Aptos blockchain. This project combines the power of AI with blockchain technology to enable decentralized betting on future events.
+
+## Features
+
+- **Create Prediction Markets**: Users can create markets about any future event by simply describing it in natural language
+- **Aptos Blockchain Integration**: All markets are created on-chain for transparency and security
+- **AI-Powered Interaction**: Uses Claude AI to understand user intent and extract prediction details
+- **Wallet Management**: Create new Aptos wallets or import existing ones
+- **Transaction Tracking**: View your prediction market transactions on Aptos Explorer
+
+## How It Works
+
+1. **Start the Bot**: Use the `/start` command to create or import an Aptos wallet
+2. **Create a Market**: Simply mention betting-related keywords along with what you want to bet on
+   - Example: "Let's bet on whether BTC will reach $200k by the end of the year"
+3. **AI Processing**: The bot extracts the question, description, and end date from your message
+4. **On-Chain Creation**: The prediction market is created on the Aptos blockchain
+5. **Place Bets**: Users can place bets on the outcome (Yes/No)
+
+## Technical Stack
+
+- **Frontend**: Telegram Bot API
+- **Backend**: Next.js API routes
+- **Blockchain**: Aptos (Testnet)
+- **AI**: Claude 3.5 Sonnet via Anthropic API
+- **Agent Framework**: Move Agent Kit & LangChain
+- **Database**: MongoDB for user wallet management
 
 ## Quick Deploy
+
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FMetaMove%2Ftg-bot-starter%2Ftree%2Fmain%2Fadvanced-tg-bot&env=ANTHROPIC_API_KEY,PANORA_API_KEY,TELEGRAM_BOT_TOKEN,NEXT_PUBLIC_FIREBASE_API_KEY,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,NEXT_PUBLIC_FIREBASE_PROJECT_ID,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,NEXT_PUBLIC_FIREBASE_APP_ID,NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID&project-name=advanced-tg-bot&repository-name=advanced-tg-bot)
 
-## How to get the telegram bot token
+## Setup Instructions
 
-You can check [here](https://help.zoho.com/portal/en/kb/desk/support-channels/instant-messaging/telegram/articles/telegram-integration-with-zoho-desk#How_to_find_a_token_for_an_existing_Telegram_Bot) how you can obtain a bot token for your telegram bot.
+1. Set environment variables:
 
-## How to setup the project
+   - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
+   - `ANTHROPIC_API_KEY`: API key for Claude AI
+   - `PANORA_API_KEY`: API key for Panora
+   - `NEXT_PUBLIC_MONGO_URL`: MongoDB connection string
 
-- Set env variables
-- Run ``` pnpm install ```
-- Run ``` pnpm run dev ``` 
-- Run ``` ngrok http 3000 ```
-- With the URL you got from ngrok, where your bot is hosted at https://yourUrl.app/api/bot 
-- Set the webhook by using this command ``` curl https://api.telegram.org/bot<telegram_bot_token>/setWebhook?url=https://<your-deployment-url>.app/api/bot ``` or simply clicking on that link.
-- You can host it on Vercel too as we have used NextJs in this.
-- Once the URL is set successfully, you will see this ``` {"ok":true,"result":true,"description":"Webhook was set"} ```
+2. Install dependencies:
 
-Done!!! Congratulations you just hosted Aptos Agent Kit on a Telegram bot.
+   ```
+   pnpm install
+   ```
 
+3. Run the development server:
+
+   ```
+   pnpm run dev
+   ```
+
+4. Set up webhook for your Telegram bot:
+   - Use ngrok or similar tool to expose your local server
+   - Set the webhook URL to `https://your-url.app/api/bot`
+   - Example: `curl https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-url.app/api/bot`
+
+## Smart Contract
+
+The project uses a Move smart contract on Aptos for managing prediction markets. The contract handles:
+
+- Market creation with question, description, and end time
+- Placing bets on outcomes (Yes/No)
+- Resolving markets and distributing winnings
+- Viewing market information and user positions
+
+## Contributing
+
+Contributions are welcome! Feel free to submit issues or pull requests to improve the project.
+
+## License
+
+MIT

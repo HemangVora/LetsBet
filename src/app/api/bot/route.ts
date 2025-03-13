@@ -480,8 +480,8 @@ bot.on("message:text", async (ctx: Context) => {
   if (!userId) {
     return;
   }
-
   const messageText = ctx.message?.text || "";
+
   const isGroupChat =
     ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
 
@@ -543,15 +543,14 @@ bot.on("message:text", async (ctx: Context) => {
   const userWallet = await usersCollection.findOne({ userId: userId });
   if (!userWallet) {
     // User doesn't have a wallet, prompt them to create one
-    const keyboard = new InlineKeyboard()
-      .text("Create New Account", "create_account")
-      .text("Import Existing Account", "import_account");
-
+    const { AptosAccount, inProgress } = await getOrCreateUserWallet(userId);
     await ctx.reply(
-      "You need to create or import an account first to use this bot.",
-      { reply_markup: keyboard }
+      "Your new account has been created! Here's your wallet address:"
     );
-    return;
+    await ctx.reply(`${String(AptosAccount.accountAddress)}`);
+    await ctx.reply(
+      "You can now start using the bot. Mention betting or prediction-related keywords in your messages to create prediction markets!"
+    );
   }
 
   // Check if message is related to prediction markets
