@@ -181,7 +181,7 @@ class PlaceBetTool extends Tool {
         sender: this.signer.getAddress(),
         data: {
           function: `0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::place_bet`,
-          functionArguments: [marketId, betAmount.toString(), betOnYes],
+          functionArguments: [marketId, betOnYes, betAmount.toString()],
         },
       });
 
@@ -619,12 +619,45 @@ async function placeBet(
     let finalMarketId = marketId;
     if (!finalMarketId) {
       // Get the latest market from the database
-      const db = await connectToMongo();
-      const marketsCollection = db.collection("markets");
-      const latestMarket = await marketsCollection.findOne(
-        {},
-        { sort: { createdAt: -1 } }
-      );
+      const client = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+      const allMarkets = await client.view({
+        payload: {
+          function:
+            "0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::get_all_markets_data",
+        },
+      });
+      // console.log(allMarkets);
+      // Find the market with the highest ID (latest market)
+      let latestMarket: any = null;
+      let highestId = 0;
+
+      if (allMarkets && allMarkets.length > 0) {
+        // Process the nested array structure from the API response
+        if (
+          Array.isArray(allMarkets) &&
+          allMarkets.length > 0 &&
+          Array.isArray(allMarkets[0])
+        ) {
+          const markets = allMarkets[0];
+          for (const market of markets) {
+            if (
+              market &&
+              typeof market === "object" &&
+              "id" in market &&
+              parseInt(market.id) > highestId
+            ) {
+              highestId = parseInt(market.id);
+              latestMarket = market;
+            }
+          }
+        }
+
+        if (latestMarket) {
+          finalMarketId = latestMarket.id.toString();
+        } else {
+          console.log("No prediction markets found. Please create one first.");
+        }
+      }
 
       if (latestMarket) {
         finalMarketId = latestMarket.marketId;
@@ -924,22 +957,29 @@ bot.on("message:text", async (ctx: Context) => {
               "0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::get_all_markets_data",
           },
         });
-
+        // console.log(allMarkets);
         // Find the market with the highest ID (latest market)
         let latestMarket: any = null;
         let highestId = 0;
 
         if (allMarkets && allMarkets.length > 0) {
-          for (const market of allMarkets) {
-            if (
-              market &&
-              typeof market === "object" &&
-              "id" in market &&
-              typeof market.id === "number" &&
-              market.id > highestId
-            ) {
-              highestId = market.id;
-              latestMarket = market;
+          // Process the nested array structure from the API response
+          if (
+            Array.isArray(allMarkets) &&
+            allMarkets.length > 0 &&
+            Array.isArray(allMarkets[0])
+          ) {
+            const markets = allMarkets[0];
+            for (const market of markets) {
+              if (
+                market &&
+                typeof market === "object" &&
+                "id" in market &&
+                parseInt(market.id) > highestId
+              ) {
+                highestId = parseInt(market.id);
+                latestMarket = market;
+              }
             }
           }
 
