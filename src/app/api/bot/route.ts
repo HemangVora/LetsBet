@@ -152,6 +152,67 @@ class CreatePredictionMarketTool extends Tool {
   }
 }
 
+// New tool for placing bets on prediction markets
+class PlaceBetTool extends Tool {
+  name = "place_bet";
+  description = "Place a bet on a prediction market on Aptos blockchain";
+
+  constructor(
+    private agent: AgentRuntime,
+    private signer: LocalSigner,
+    private AptosAccount: Ed25519Account
+  ) {
+    super();
+  }
+
+  async _call(input: string): Promise<string> {
+    try {
+      const params = JSON.parse(input);
+      const { marketId, betAmount, betOnYes } = params;
+      const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+
+      console.log(
+        `Placing bet: ${betAmount} on ${
+          betOnYes ? "YES" : "NO"
+        } for market ${marketId}`
+      );
+
+      const transaction = await aptos.transaction.build.simple({
+        sender: this.signer.getAddress(),
+        data: {
+          function: `0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::place_bet`,
+          functionArguments: [marketId, betAmount.toString(), betOnYes],
+        },
+      });
+
+      // Sign and submit the transaction
+      const pendingTransaction = await aptos.signAndSubmitTransaction({
+        signer: this.AptosAccount,
+        transaction,
+      });
+
+      // Wait for transaction hash
+      while (!pendingTransaction.hash) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      console.log(pendingTransaction.hash);
+      return JSON.stringify({
+        success: true,
+        transactionHash: pendingTransaction.hash,
+        message: `Successfully placed bet of ${betAmount} APT on ${
+          betOnYes ? "YES" : "NO"
+        } for market ${marketId}`,
+      });
+    } catch (error: any) {
+      console.error("Error placing bet:", error);
+      return JSON.stringify({
+        success: false,
+        error: error.message || "Unknown error occurred",
+      });
+    }
+  }
+}
+
 async function initializeAgent(userId: string, AptosAccount: Ed25519Account) {
   try {
     const llm = new ChatAnthropic({
@@ -179,6 +240,7 @@ async function initializeAgent(userId: string, AptosAccount: Ed25519Account) {
         ...tools,
         new AptosPrivateKeyTool(aptosAgent, AptosAccount.privateKey.toString()),
         new CreatePredictionMarketTool(aptosAgent, signer, AptosAccount),
+        new PlaceBetTool(aptosAgent, signer, AptosAccount),
       ],
       checkpointSaver: memorySaver,
       messageModifier: `
@@ -194,6 +256,10 @@ async function initializeAgent(userId: string, AptosAccount: Ed25519Account) {
       3. When the prediction should be resolved (timestamp)
       
       Use the create_prediction_market tool to create the market with this information.
+      
+      You can also help users place bets on prediction markets. When users mention placing a bet,
+      extract the amount they want to bet and whether they're betting on "yes" or "no".
+      Use the place_bet tool to place the bet with this information.
       
       If not enough information is provided, ask follow-up questions to gather what you need.
       If there is a 5XX (internal) HTTP error code, ask the user to try again later.
@@ -244,6 +310,45 @@ function isPredictionMarketRequest(message: string): boolean {
 
   const lowerMessage = message.toLowerCase();
   return keywords.some((keyword) => lowerMessage.includes(keyword));
+}
+
+// Function to detect bet placement requests
+function isBetPlacementRequest(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+
+  // Common bet placement phrases
+  const betPhrases = [
+    "place my bet",
+    "place bet",
+    "bet on",
+    "i bet",
+    "i want to bet",
+    "put money on",
+    "wager on",
+    "stake on",
+    "i'll take",
+    "going with",
+    "putting down",
+    "placing",
+    "betting on",
+    "i'm in for",
+    "i'd like to bet",
+    "let me bet",
+  ];
+
+  // Check for amount indicators
+  const hasAmount = /\d+(\.\d+)?\s*(apt|aptos|coins|tokens)/i.test(
+    lowerMessage
+  );
+
+  // Check for yes/no position indicators
+  const hasPosition = /\b(yes|no|true|false|for|against)\b/i.test(lowerMessage);
+
+  // Return true if message contains a bet phrase AND (has amount OR position indicator)
+  return (
+    betPhrases.some((phrase) => lowerMessage.includes(phrase)) &&
+    (hasAmount || hasPosition || lowerMessage.includes("market"))
+  );
 }
 
 // Function to extract prediction details from message using LLM
@@ -333,6 +438,95 @@ async function extractPredictionDetails(
   }
 }
 
+// Function to extract bet details from message
+async function extractBetDetails(
+  message: string,
+  userId: string,
+  AptosAccount: Ed25519Account
+) {
+  const { agent, config } = await initializeAgent(userId, AptosAccount);
+
+  const prompt = `
+    Extract the bet placement information from this message: "${message}"
+    
+    I need:
+    1. The bet amount in APT
+    2. Whether the user is betting on "yes" or "no"
+    3. Any market ID mentioned (if none, assume it's the latest market)
+    
+    Format your response EXACTLY like this JSON, with no other text:
+    {
+      "betAmount": 0.5,
+      "betOnYes": true,
+      "marketId": "optional_market_id_if_mentioned"
+    }
+
+    If no market ID is specified, leave it as an empty string.
+    If no bet amount is specified, default to 0.1 APT.
+    If no yes/no preference is specified, default to "yes".
+  `;
+
+  const stream = await agent.stream(
+    { messages: [new HumanMessage(prompt)] },
+    config
+  );
+
+  let response = "";
+  for await (const chunk of stream as AsyncIterable<{
+    agent?: any;
+    tools?: any;
+  }>) {
+    if (
+      "agent" in chunk &&
+      chunk.agent.messages &&
+      chunk.agent.messages[0]?.content
+    ) {
+      const messageContent = chunk.agent.messages[0].content;
+      if (typeof messageContent === "string") {
+        response = messageContent;
+      } else if (Array.isArray(messageContent)) {
+        const textContent = messageContent.find((msg) => msg.type === "text");
+        if (textContent) {
+          response = textContent.text;
+          break;
+        }
+      }
+    }
+  }
+
+  // Clean the response to only keep JSON
+  response = response.replace(/^[\s\S]*?({[\s\S]*})[\s\S]*$/, "$1");
+
+  try {
+    // Extract JSON from the response
+    const jsonMatch =
+      response.match(/```json\n([\s\S]*?)\n```/) ||
+      response.match(/{[\s\S]*?}/);
+
+    if (jsonMatch) {
+      const jsonString = jsonMatch[1] || jsonMatch[0];
+      const details = JSON.parse(jsonString);
+
+      // Set defaults if needed
+      if (!details.betAmount) {
+        details.betAmount = 0.1;
+      }
+      if (details.betOnYes === undefined) {
+        details.betOnYes = true;
+      }
+      if (!details.marketId) {
+        details.marketId = "";
+      }
+
+      return details;
+    }
+    throw new Error("Could not extract structured bet details from response");
+  } catch (error) {
+    console.error("Error parsing bet details:", error);
+    throw error;
+  }
+}
+
 // Function to create a prediction market
 async function createPredictionMarket(
   initiatorUserId: string,
@@ -404,6 +598,97 @@ async function createPredictionMarket(
   }
 }
 
+// Function to place a bet on a prediction market
+async function placeBet(
+  userId: string,
+  betAmount: number,
+  betOnYes: boolean,
+  marketId?: string
+) {
+  try {
+    // Get the user's wallet account
+    const { AptosAccount, inProgress } = await getOrCreateUserWallet(userId);
+
+    // Initialize agent with the user's account
+    const { agent, config, signer } = await initializeAgent(
+      userId,
+      AptosAccount
+    );
+
+    // If no marketId provided, get the latest market
+    let finalMarketId = marketId;
+    if (!finalMarketId) {
+      // Get the latest market from the database
+      const db = await connectToMongo();
+      const marketsCollection = db.collection("markets");
+      const latestMarket = await marketsCollection.findOne(
+        {},
+        { sort: { createdAt: -1 } }
+      );
+
+      if (latestMarket) {
+        finalMarketId = latestMarket.marketId;
+      } else {
+        throw new Error(
+          "No prediction markets found. Please create one first."
+        );
+      }
+    }
+
+    // Convert APT to octas (1 APT = 100,000,000 octas)
+    const betAmountInOctas = Math.floor(betAmount * 100000000);
+
+    const placeBetPrompt = `
+      Place a bet with the following details:
+      {
+        "marketId": "${finalMarketId}",
+        "betAmount": ${betAmountInOctas},
+        "betOnYes": ${betOnYes}
+      }
+      
+      Use the place_bet tool and get the transaction hash.
+    `;
+
+    const stream = await agent.stream(
+      { messages: [new HumanMessage(placeBetPrompt)] },
+      config
+    );
+
+    let result = null;
+
+    for await (const chunk of stream as AsyncIterable<{
+      agent?: any;
+      tools?: any;
+    }>) {
+      if (chunk.tools?.messages?.[0]?.content) {
+        try {
+          const response = JSON.parse(chunk.tools.messages[0].content);
+          if (response.success && response.transactionHash) {
+            result = response;
+          }
+        } catch (e) {
+          console.error("Error parsing JSON from tools response:", e);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      userAddress: signer.getAddress(),
+      transactionDetails: result,
+      betAmount,
+      betOnYes,
+      marketId: finalMarketId,
+    };
+  } catch (error: any) {
+    console.error("Error placing bet:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
 bot.command("start", async (ctx) => {
   console.log("command start");
   const userId = ctx.from?.id.toString();
@@ -447,7 +732,10 @@ Simply mention keywords like "bet", "wager", "prediction" in your message along 
 
 Example: "Let's bet on whether BTC will reach $200k by the end of the year"
 
-The bot will detect your intent and help you create a prediction market.
+*Placing Bets:*
+To place a bet, say something like "place my bet of 0.5 APT on yes"
+
+The bot will detect your intent and help you create a prediction market or place a bet.
   `);
 });
 
@@ -597,12 +885,14 @@ bot.on("message:text", async (ctx: Context) => {
     }
   }
 
-  // Check if message is related to prediction markets
-  if (isPredictionMarketRequest(messageText)) {
+  // Check if message is related to placing a bet
+  if (isBetPlacementRequest(messageText)) {
     // Get the user's wallet
-    const { AptosAccount, inProgress } = await getOrCreateUserWallet(userId);
+    const walletData = await getOrCreateUserWallet(userId);
+    const userAptosAccount = walletData.AptosAccount;
+    const userInProgress = walletData.inProgress;
 
-    if (inProgress) {
+    if (userInProgress) {
       await ctx.reply(`Hold on! I'm still processing your previous request...`);
       return;
     }
@@ -614,40 +904,81 @@ bot.on("message:text", async (ctx: Context) => {
     );
 
     try {
-      // Notify the chat we're processing the prediction market request
-      await ctx.reply(
-        "I detected a prediction market request! Analyzing details..."
-      );
+      // Notify the chat we're processing the bet request
+      await ctx.reply("I detected a bet placement request! Processing...");
 
-      // Extract prediction details from message
-      const marketDetails = await extractPredictionDetails(
+      // Extract bet details from message
+      const betDetails = await extractBetDetails(
         messageText,
         userId,
-        AptosAccount
+        userAptosAccount
       );
 
-      // Confirm the details with user
-      const confirmationMsg = `
-📊 *Creating Prediction Market*
-Question: ${marketDetails.question}
-Description: ${marketDetails.description}
-End Date: ${new Date(marketDetails.endTimestamp * 1000).toLocaleString()}
+      // If no market ID was specified, get the latest market
+      if (!betDetails.marketId) {
+        // Get all markets data from the blockchain
+        const client = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+        const allMarkets = await client.view({
+          payload: {
+            function:
+              "0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::get_all_markets_data",
+          },
+        });
 
-Creating market on Aptos blockchain...`;
+        // Find the market with the highest ID (latest market)
+        let latestMarket: any = null;
+        let highestId = 0;
 
-      await ctx.reply(confirmationMsg);
+        if (allMarkets && allMarkets.length > 0) {
+          for (const market of allMarkets) {
+            if (
+              market &&
+              typeof market === "object" &&
+              "id" in market &&
+              typeof market.id === "number" &&
+              market.id > highestId
+            ) {
+              highestId = market.id;
+              latestMarket = market;
+            }
+          }
 
-      // Create the prediction market
-      const result: any = await createPredictionMarket(
-        userId,
-        marketDetails.question,
-        marketDetails.description,
-        marketDetails.endTimestamp
-      );
+          if (latestMarket) {
+            betDetails.marketId = latestMarket.id.toString();
+            await ctx.reply(
+              `Using the latest prediction market: "${latestMarket.question}"`
+            );
+          } else {
+            await ctx.reply(
+              "No prediction markets found. Please create one first."
+            );
+            return;
+          }
+        }
 
-      if (result.success) {
-        // Successful market creation
-        const successMsg = `
+        // Confirm the details with user
+        const confirmationMsg = `
+💰 *Placing Bet*
+Amount: ${betDetails.betAmount} APT
+Position: ${betDetails.betOnYes ? "YES" : "NO"}
+Market ID: ${betDetails.marketId}
+
+Processing your bet on Aptos blockchain...`;
+
+        await ctx.reply(confirmationMsg);
+
+        // Place the bet
+        const result: any = await placeBet(
+          userId,
+          betDetails.betAmount,
+          betDetails.betOnYes,
+          betDetails.marketId
+        );
+
+        if (result.success) {
+          // Successful bet placement
+          const successMsg = `
+🎯 *Bet Placed Successfully!*
 🎉 *Prediction Market Created Successfully!*
 Question: ${result.question}
 Creator: ${result.initiatorAddress}
@@ -655,15 +986,18 @@ Expiration: ${new Date(result.endTimestamp * 1000).toLocaleString()}
 
 Transaction Information:
 https://explorer.aptoslabs.com/txn/${
-          result.transactionDetails.transactionHash
-        }/changes?network=testnet
+            result.transactionDetails.transactionHash
+          }/changes?network=testnet
 
 Place your bets now!`;
 
-        await ctx.reply(successMsg);
-      } else {
-        // Failed market creation
-        await ctx.reply(`Failed to create prediction market: ${result.error}`);
+          await ctx.reply(successMsg);
+        } else {
+          // Failed market creation
+          await ctx.reply(
+            `Failed to create prediction market: ${result.error}`
+          );
+        }
       }
     } catch (error) {
       console.error("Error in prediction market flow:", error);
