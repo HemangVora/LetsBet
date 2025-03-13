@@ -67,6 +67,27 @@ The project uses a Move smart contract on Aptos for managing prediction markets.
 - Resolving markets and distributing winnings
 - Viewing market information and user positions
 
+## Contract Structure
+
+The prediction market contract consists of the following key components:
+
+### Data Structures
+
+- `Market`: Stores market details including question, description, end time, betting amounts, and outcome
+- `UserPosition`: Tracks a user's bets in a specific market
+- `PredictionMarketState`: Global state containing all markets and user positions
+
+### Key Functions
+
+- `create_market`: Creates a new prediction market with specified parameters
+- `place_bet`: Allows users to place bets on Yes/No outcomes
+- `resolve_market`: Resolves a market with the final outcome
+- `claim_winnings`: Allows winners to claim their rewards
+- `get_market_data`: View function to retrieve market information
+- `get_user_position`: View function to check a user's position in a market
+
+![Prediction Market Contract Flow](Architecture.png)
+
 ## Contributing
 
 Contributions are welcome! Feel free to submit issues or pull requests to improve the project.
