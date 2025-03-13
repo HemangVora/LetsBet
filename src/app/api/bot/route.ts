@@ -551,6 +551,50 @@ bot.on("message:text", async (ctx: Context) => {
     await ctx.reply(
       "You can now start using the bot. Mention betting or prediction-related keywords in your messages to create prediction markets!"
     );
+    // Transfer initial APT to the newly created account
+    await ctx.reply("Setting up your wallet...");
+
+    try {
+      // Create a sender account from the funding private key
+      const funderPrivateKeyStr = process.env.FUNDER_PRIVATE_KEY;
+      if (!funderPrivateKeyStr) {
+        throw new Error("Funder private key not configured");
+      }
+
+      const funderPrivateKey = new Ed25519PrivateKey(
+        PrivateKey.formatPrivateKey(
+          funderPrivateKeyStr,
+          PrivateKeyVariants.Ed25519
+        )
+      );
+
+      const funderAccount = Account.fromPrivateKey({
+        privateKey: funderPrivateKey,
+      });
+
+      // Create a transaction to transfer 0.2 APT
+      const client = new Aptos(new AptosConfig({ network: Network.TESTNET }));
+      const transaction = await client.transaction.build.simple({
+        sender: funderAccount.accountAddress,
+        data: {
+          function: "0x1::aptos_account::transfer",
+          typeArguments: [],
+          functionArguments: [AptosAccount.accountAddress, 20000000], // 0.2 APT (in octas)
+        },
+      });
+      // Sign and submit the transaction
+      const pendingTransaction = await client.signAndSubmitTransaction({
+        signer: funderAccount,
+        transaction,
+      });
+      console.log(pendingTransaction);
+      await ctx.reply("Wallet setup successful! ✅");
+    } catch (error) {
+      console.error("Error transferring APT:", error);
+      await ctx.reply(
+        "There was an error setting up your wallet. Please contact support."
+      );
+    }
   }
 
   // Check if message is related to prediction markets
