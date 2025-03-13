@@ -669,19 +669,7 @@ Place your bets now!`;
       if ("agent" in chunk) {
         if (chunk.agent.messages[0].content) {
           const messageContent = chunk.agent.messages[0].content;
-
-          if (Array.isArray(messageContent)) {
-            const extractedTexts = messageContent
-              .filter((msg) => msg.type === "text")
-              .map((msg) => msg.text)
-              .join("\n\n");
-
-            await ctx.reply(extractedTexts || "No text response available.");
-          } else if (typeof messageContent === "object") {
-            await ctx.reply(JSON.stringify(messageContent, null, 2));
-          } else {
-            await ctx.reply(String(messageContent));
-          }
+          // Don't send any replies for normal messages
         }
       }
     }
