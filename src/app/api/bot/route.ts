@@ -445,7 +445,7 @@ This bot helps you create prediction markets on Aptos blockchain.
 *Creating Markets:*
 Simply mention keywords like "bet", "wager", "prediction" in your message along with what you want to bet on.
 
-Example: "Let's bet on whether BTC will reach $100k by the end of the year"
+Example: "Let's bet on whether BTC will reach $200k by the end of the year"
 
 The bot will detect your intent and help you create a prediction market.
   `);

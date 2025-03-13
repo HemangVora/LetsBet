@@ -5,6 +5,7 @@ module PredictionMarket::prediction_market {
     use aptos_std::table::{Self, Table};
     use std::signer;
     use aptos_framework::aptos_coin::AptosCoin;
+    use std::vector;
 
     // Error codes
     const E_MARKET_NOT_FOUND: u64 = 1;
@@ -28,7 +29,16 @@ module PredictionMarket::prediction_market {
         outcome: u8, // 0 = unresolved, 1 = yes, 2 = no
         status: u8,
     }
-
+ struct MarketInfo has copy, drop {
+    id: u64,
+    question: String,
+    description: String,
+    end_time: u64,
+    total_yes_amount: u64,
+    total_no_amount: u64,
+    outcome: u8,
+    status: u8,
+}
     struct UserPosition has store {
         yes_amount: u64,
         no_amount: u64,
@@ -212,4 +222,46 @@ module PredictionMarket::prediction_market {
         let position = table::borrow(positions, market_id);
         (position.yes_amount, position.no_amount)
     }
+#[view]
+    public fun get_all_markets(): vector<u64> acquires PredictionMarketState {
+        let state = borrow_global<PredictionMarketState>(@PredictionMarket);
+        let market_ids = vector::empty();
+        let i = 1;
+        
+        while (i <= state.market_count) {
+            if (table::contains(&state.markets, i)) {
+                vector::push_back(&mut market_ids, i);
+            };
+            i = i + 1;
+        };
+        
+        market_ids
+    }
+#[view]
+public fun get_all_markets_data(): vector<MarketInfo> acquires PredictionMarketState {
+    let state = borrow_global<PredictionMarketState>(@PredictionMarket);
+    let markets_info = vector::empty<MarketInfo>();
+    let i = 1;
+
+    while (i <= state.market_count) {
+        if (table::contains(&state.markets, i)) {
+            let market = table::borrow(&state.markets, i);
+            let market_info = MarketInfo {
+                id: i,
+                question: market.question,
+                description: market.description,
+                end_time: market.end_time,
+                total_yes_amount: market.total_yes_amount,
+                total_no_amount: market.total_no_amount,
+                outcome: market.outcome,
+                status: market.status,
+            };
+            vector::push_back(&mut markets_info, market_info);
+        };
+        i = i + 1;
+    };
+
+    markets_info
+}
+
 } 

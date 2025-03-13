@@ -10,3 +10,4 @@ subdir = "aptos-framework"
 
 [addresses]
 tester = "0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb"
+PredictionMarket = "0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb"
