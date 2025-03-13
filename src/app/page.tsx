@@ -7,6 +7,7 @@ import Link from "next/link";
 import { motion, useScroll, AnimatePresence } from "framer-motion";
 
 import { styles } from "./components/styles";
+import useGetAllMarket from "@/hooks/useGetAllMarket";
 // Add this interface near the top of your file, after your imports
 interface Market {
   marketId: any;
@@ -20,26 +21,32 @@ interface Market {
 
 // Add this interface after your Market interface
 interface FormattedMarket {
-  id: any;
-  title: string;
-  yesPercentage: number;
-  noPercentage: number;
-  liquidity: string;
-  category: string;
-  image: string;
-  expirationDate: number;
+  description: string;
+  end_time: string;
+  id: string;
+  outcome: number;
+  question: string;
+  status: number;
+  total_no_amount: string;
+  total_yes_amount: string;
 }
 export default function Main() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const { scrollYProgress } = useScroll();
   const [isHovering, setIsHovering] = useState(false);
-
+  const { markets, error, useGetAllMarketData } = useGetAllMarket();
   // Prediction markets state
   const [predictionMarkets, setPredictionMarkets] = useState<FormattedMarket[]>(
     []
   );
-
+  useEffect(() => {
+    const fetchMarkets = async () => {
+      const markets = await useGetAllMarketData();
+      setPredictionMarkets(markets);
+    };
+    fetchMarkets();
+  }, []);
   const categories = [
     "All",
     "Memecoins",
@@ -121,7 +128,7 @@ export default function Main() {
     <div className="min-h-screen text-black overflow-hidden bg-[#fff]">
       {/* Header */}
       <motion.header
-        className="sticky top-0 z-50 border-b"
+        className=" fixed top-0 z-50 backdrop-blur-2xl w-full bg-transparent border-b"
         style={{
           borderColor: "#ddd",
         }}
@@ -136,14 +143,14 @@ export default function Main() {
           >
             <motion.div>
               <Image
-                src="/images/logo.png"
+                src="/logo.png"
                 alt="Predikto Markets "
                 width={60}
                 height={60}
                 className="mr-2 rounded-full"
               />
             </motion.div>
-            <motion.h1 className="text-3xl font-bold font-dmsans">
+            <motion.h1 className="text-3xl font-bold font-dmsans text-[#574624]">
               Predikto
             </motion.h1>
           </motion.div>
@@ -170,7 +177,7 @@ export default function Main() {
           {/* Track indicator */}
           <motion.div className="absolute h-1 bottom-0 rounded-full bg-gray-300" />
 
-          <div className="flex space-x-3">
+          <div className="flex space-x-3 mt-32">
             {categories.map((category) => (
               <button
                 style={styles.boxShadowForButton}
@@ -213,15 +220,12 @@ export default function Main() {
           transition={{ duration: 0.5 }}
           viewport={{ once: true }}
         >
-          Dankest Markets
+          Markets
         </motion.h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           <AnimatePresence>
             {predictionMarkets
-              .filter(
-                (market) =>
-                  activeCategory === "All" || market.category === activeCategory
-              )
+              .filter((market) => activeCategory === "All")
               .map((market, index) => (
                 <motion.div
                   key={market.id}
@@ -244,8 +248,8 @@ export default function Main() {
                     border: `1px solid #ddd`,
                   }}
                 >
-                  <div className="relative h-48 w-full overflow-hidden">
-                    <motion.div
+                  <div className="relative  w-full overflow-hidden">
+                    {/* <motion.div
                       whileHover={{ scale: 1.1 }}
                       transition={{ duration: 0.5 }}
                     >
@@ -255,19 +259,19 @@ export default function Main() {
                         style={{ objectFit: "cover" }}
                         className="transition-transform duration-500"
                       />
-                    </motion.div>
+                    </motion.div> */}
                     <motion.div className="absolute bottom-4 left-4">
-                      <motion.span
+                      {/* <motion.span
                         className="px-4 py-2 rounded-full text-sm font-bold font-dmsans bg-gray-200"
                         whileHover={{ scale: 1.05 }}
                       >
                         {market.category}
-                      </motion.span>
+                      </motion.span> */}
                     </motion.div>
                   </div>
                   <div className="p-6">
                     <motion.h4 className="text-xl font-bold mb-4 font-dmsans">
-                      {market.title}
+                      {market.question}
                     </motion.h4>
 
                     <div className="mb-6">
@@ -276,9 +280,13 @@ export default function Main() {
                           className="flex items-center"
                           whileHover={{ scale: 1.05 }}
                         >
-                          <motion.div className="w-4 h-4 rounded-full mr-2 bg-black"></motion.div>
+                          <motion.div className="w-4 h-4 rounded-full mr-2 bg-[#574624]"></motion.div>
                           <span className="font-dmsans">
-                            Based: {market.yesPercentage}%
+                            Based:{" "}
+                            {(
+                              parseInt(market.total_yes_amount) / 100000000
+                            ).toFixed(2)}{" "}
+                            APT
                           </span>
                         </motion.span>
                         <motion.span
@@ -287,7 +295,11 @@ export default function Main() {
                         >
                           <motion.div className="w-4 h-4 rounded-full mr-2 bg-gray-400"></motion.div>
                           <span className="font-dmsans">
-                            Cringe: {market.noPercentage}%
+                            Cringe:{" "}
+                            {(
+                              parseInt(market.total_no_amount) / 100000000
+                            ).toFixed(2)}{" "}
+                            APT
                           </span>
                         </motion.span>
                       </div>
@@ -295,10 +307,20 @@ export default function Main() {
                         <motion.div
                           className="h-4 bg-gray-400"
                           style={{
-                            width: `${market.yesPercentage}%`,
+                            width: `${
+                              (parseInt(market.total_yes_amount) /
+                                parseInt(market.total_no_amount)) *
+                              100
+                            }%`,
                           }}
                           initial={{ width: 0 }}
-                          whileInView={{ width: `${market.yesPercentage}%` }}
+                          whileInView={{
+                            width: `${
+                              (parseInt(market.total_yes_amount) /
+                                parseInt(market.total_no_amount)) *
+                              100
+                            }%`,
+                          }}
                           transition={{
                             duration: 1.5,
                             delay: 0.2,
@@ -315,14 +337,24 @@ export default function Main() {
                         className="text-sm flex items-center font-dmsans text-gray-600"
                         whileHover={{ scale: 1.05 }}
                       >
-                        {market.liquidity}
+                        {(
+                          parseInt(market.total_yes_amount) / 100000000
+                        ).toFixed(2)}{" "}
                       </motion.span>
                       <Link href={`/market/${market.id}`}>
                         <motion.div
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
-                          {market.expirationDate}
+                          {new Date(
+                            parseInt(market.end_time) * 1000
+                          ).toLocaleDateString(undefined, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </motion.div>
                       </Link>
                     </div>
@@ -344,64 +376,7 @@ export default function Main() {
         whileInView={{ opacity: 1 }}
         transition={{ duration: 0.8 }}
         viewport={{ once: true }}
-      >
-        <div className="container mx-auto px-4 relative z-10">
-          <motion.h3
-            className="text-4xl font-bold text-center mb-12 font-dmsans"
-            initial={{ opacity: 0, scale: 0.8 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-          >
-            How To Get Rich
-          </motion.h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                image: "/images/pepe-wallet.png",
-                title: "Connect Wallet",
-                desc: "Link your wallet and join the Pepe army",
-              },
-              {
-                image: "/images/pepe-trade.png",
-                title: "Pick Winners",
-                desc: "Use your galaxy brain to predict the future",
-              },
-              {
-                image: "/images/pepe-rich.png",
-                title: "Get Rich",
-                desc: "Stack them gains and flex on normies",
-              },
-            ].map((item, index) => (
-              <motion.div
-                key={index}
-                className="flex flex-col items-center text-center p-8 rounded-2xl relative z-10"
-                initial={{ opacity: 0, y: 50 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.7,
-                  delay: index * 0.3,
-                  type: "spring",
-                }}
-                viewport={{ once: true }}
-                whileHover={{ scale: 1.03 }}
-                style={{
-                  background: `#fff`,
-                  border: `1px solid #ddd`,
-                }}
-              >
-                <motion.div className="relative w-40 h-40 mb-8">
-                  <Image src={item.image} alt={item.title} fill />
-                </motion.div>
-                <motion.h4 className="text-2xl font-bold mb-3 font-dmsans">
-                  {item.title}
-                </motion.h4>
-                <motion.p className="text-lg font-dmsans text-gray-600">
-                  {item.desc}
-                </motion.p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </motion.section>
+      ></motion.section>
 
       {/* Footer */}
       <motion.footer
@@ -419,46 +394,20 @@ export default function Main() {
             >
               <motion.div className="rounded-full">
                 <Image
-                  src="/images/logo.png"
+                  src="/logo.png"
                   alt="Pepe Logo"
                   width={70}
                   height={70}
                   className="mr-3 rounded-full"
                 />
               </motion.div>
-              <motion.h1 className="text-3xl font-bold font-dmsans">
+              <motion.h1 className="text-3xl font-bold font-dmsans text-[#574624]">
                 Predikto
               </motion.h1>
             </motion.div>
-            <div className="flex space-x-8">
-              {[
-                { icon: "/images/social/twitter.svg", alt: "Twitter" },
-                { icon: "/images/social/telegram.svg", alt: "Telegram" },
-                { icon: "/images/social/discord.svg", alt: "Discord" },
-                { icon: "/images/social/github.svg", alt: "GitHub" },
-              ].map((social, index) => (
-                <motion.a
-                  key={index}
-                  href="#"
-                  whileHover={{ scale: 1.2 }}
-                  whileTap={{ scale: 0.9 }}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <div className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 border border-gray-200">
-                    <Image
-                      src={social.icon}
-                      alt={social.alt}
-                      width={24}
-                      height={24}
-                    />
-                  </div>
-                </motion.a>
-              ))}
-            </div>
           </div>
           <motion.div className="text-center mt-8 text-sm font-dmsans text-gray-500">
-            <p>© 2024 Predikto Markets. </p>
+            <p>© 2025 Predikto Markets. </p>
           </motion.div>
         </div>
       </motion.footer>
