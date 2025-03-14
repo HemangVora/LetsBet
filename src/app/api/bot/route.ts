@@ -107,6 +107,28 @@ class CreatePredictionMarketTool extends Tool {
     try {
       const params = JSON.parse(input);
       const { question, description, endTimestamp } = params;
+      // Check if endTimestamp is null or undefined and set to end of year if needed
+      let endTimestampNew = endTimestamp;
+      if (
+        !endTimestamp ||
+        endTimestamp === null ||
+        endTimestamp === undefined
+      ) {
+        const currentDate = new Date();
+        const endOfYear = new Date(
+          currentDate.getFullYear(),
+          11,
+          31,
+          23,
+          59,
+          59,
+          999
+        );
+        endTimestampNew = Math.floor(endOfYear.getTime() / 1000); // Convert to Unix timestamp in seconds
+        console.log(
+          `End timestamp was not provided, setting to end of year: ${params.endTimestamp}`
+        );
+      }
       const aptos = new Aptos(new AptosConfig({ network: Network.TESTNET }));
 
       // Execute the function on Aptos blockchain
@@ -114,7 +136,7 @@ class CreatePredictionMarketTool extends Tool {
       const args = [
         { type: "string", value: question },
         { type: "string", value: description },
-        { type: "u64", value: endTimestamp.toString() },
+        { type: "u64", value: endTimestampNew.toString() },
       ];
 
       console.log(`Executing: ${functionId} with args:`, args);
@@ -123,10 +145,14 @@ class CreatePredictionMarketTool extends Tool {
         sender: this.signer.getAddress(),
         data: {
           function: `0x7b32fe02523c311724de5e267ee56b6cca31f2ee04f15bfc10dbf1b23f95c6cb::prediction_market::create_market`,
-          functionArguments: [question, description, endTimestamp.toString()],
+          functionArguments: [
+            question,
+            description,
+            endTimestampNew.toString(),
+          ],
         },
       });
-
+      console.log(this.AptosAccount.accountAddress.toString());
       // Sign and submit the transaction
       const pendingTransaction = await aptos.signAndSubmitTransaction({
         signer: this.AptosAccount,
@@ -419,13 +445,10 @@ async function extractPredictionDetails(
       const jsonString = jsonMatch[1] || jsonMatch[0];
       const details = JSON.parse(jsonString);
 
-      // Ensure we have a timestamp, generate one if needed
-      if (!details.endTimestamp) {
-        // Default to 3 months from now
-        const threeMonthsFromNow = new Date();
-        threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
-        details.endTimestamp = Math.floor(threeMonthsFromNow.getTime() / 1000);
-      }
+      // Default to 3 months from now
+      const threeMonthsFromNow = new Date();
+      threeMonthsFromNow.setMonth(threeMonthsFromNow.getMonth() + 3);
+      details.endTimestamp = Math.floor(threeMonthsFromNow.getTime() / 1000);
 
       return details;
     }
@@ -573,6 +596,7 @@ async function createPredictionMarket(
           const response = JSON.parse(chunk.tools.messages[0].content);
           if (response.success && response.transactionHash) {
             result = response;
+            break; // Exit the loop once we have a successful result
           }
         } catch (e) {
           console.error("Error parsing JSON from tools response:", e);
@@ -580,9 +604,9 @@ async function createPredictionMarket(
       }
     }
 
-    console.log(result);
+    console.log("Market creation result:", result);
     return {
-      success: true,
+      success: result !== null,
       initiatorAddress: signer.getAddress(),
       transactionDetails: result,
       question,
@@ -698,6 +722,7 @@ async function placeBet(
           const response = JSON.parse(chunk.tools.messages[0].content);
           if (response.success && response.transactionHash) {
             result = response;
+            break; // Exit the loop once we have a successful result
           }
         } catch (e) {
           console.error("Error parsing JSON from tools response:", e);
@@ -706,7 +731,7 @@ async function placeBet(
     }
 
     return {
-      success: true,
+      success: result !== null,
       userAddress: signer.getAddress(),
       transactionDetails: result,
       betAmount,
@@ -1038,6 +1063,88 @@ Place your bets now!`;
             `Failed to create prediction market: ${result.error}`
           );
         }
+      }
+    } catch (error) {
+      console.error("Error in prediction market flow:", error);
+      await ctx.reply(
+        "Sorry, I encountered an error while creating the prediction market. Please try again with more details."
+      );
+    } finally {
+      // Reset the inProgress flag
+      await usersCollection.updateOne(
+        { userId: userId },
+        { $set: { inProgress: false } }
+      );
+    }
+    return;
+  }
+  // Check if message is related to prediction markets
+  if (isPredictionMarketRequest(messageText)) {
+    // Get the user's wallet
+    const { AptosAccount, inProgress } = await getOrCreateUserWallet(userId);
+
+    if (inProgress) {
+      await ctx.reply(`Hold on! I'm still processing your previous request...`);
+      return;
+    }
+
+    // Update user status to in progress
+    await usersCollection.updateOne(
+      { userId: userId },
+      { $set: { inProgress: true } }
+    );
+
+    try {
+      // Notify the chat we're processing the prediction market request
+      await ctx.reply(
+        "I detected a prediction market request! Analyzing details..."
+      );
+
+      // Extract prediction details from message
+      const marketDetails = await extractPredictionDetails(
+        messageText,
+        userId,
+        AptosAccount
+      );
+
+      // Confirm the details with user
+      const confirmationMsg = `
+📊 *Creating Prediction Market*
+Question: ${marketDetails.question}
+Description: ${marketDetails.description}
+End Date: ${new Date(marketDetails.endTimestamp * 1000).toLocaleString()}
+
+Creating market on Aptos blockchain...`;
+
+      await ctx.reply(confirmationMsg);
+
+      // Create the prediction market
+      const result: any = await createPredictionMarket(
+        userId,
+        marketDetails.question,
+        marketDetails.description,
+        marketDetails.endTimestamp
+      );
+
+      if (result.success) {
+        // Successful market creation
+        const successMsg = `
+🎉 *Prediction Market Created Successfully!*
+Question: ${result.question}
+Creator: ${result.initiatorAddress}
+Expiration: ${new Date(result.endTimestamp * 1000).toLocaleString()}
+
+Transaction Information:
+https://explorer.aptoslabs.com/txn/${
+          result.transactionDetails.transactionHash
+        }/changes?network=testnet
+
+Place your bets now!`;
+
+        await ctx.reply(successMsg);
+      } else {
+        // Failed market creation
+        await ctx.reply(`Failed to create prediction market: ${result.error}`);
       }
     } catch (error) {
       console.error("Error in prediction market flow:", error);
